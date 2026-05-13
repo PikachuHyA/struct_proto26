@@ -1,0 +1,4 @@
+common --incompatible_strict_action_env
+common --enable_platform_specific_config
+common --repo_env=CC=gcc-16
+common --repo_env=BAZEL_CXXOPTS=-std=c++26:-freflection

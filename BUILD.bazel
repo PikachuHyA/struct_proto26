@@ -1,0 +1,103 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+cc_library(
+  name = "proto3",
+  hdrs = [
+    "include/proto3.hpp",
+    "include/well_known.hpp",
+  ],
+  includes = ["include"],
+  visibility = ["//visibility:public"],
+)
+
+cc_test(
+  name = "test_search_request",
+  srcs = ["test/test_search_request.cc"],
+  deps = [
+    ":proto3",
+    "@googletest//:gtest_main",
+  ],
+)
+
+cc_test(
+  name = "test_sint",
+  srcs = ["test/test_sint.cc"],
+  deps = [
+    ":proto3",
+    "@googletest//:gtest_main",
+  ],
+)
+
+cc_test(
+  name = "test_fixed",
+  srcs = ["test/test_fixed.cc"],
+  deps = [
+    ":proto3",
+    "@googletest//:gtest_main",
+  ],
+)
+
+cc_test(
+  name = "test_map",
+  srcs = ["test/test_map.cc"],
+  deps = [
+    ":proto3",
+    "@googletest//:gtest_main",
+  ],
+)
+
+cc_test(
+  name = "test_oneof",
+  srcs = ["test/test_oneof.cc"],
+  deps = [
+    ":proto3",
+    "@googletest//:gtest_main",
+  ],
+)
+
+cc_test(
+  name = "test_optional",
+  srcs = ["test/test_optional.cc"],
+  deps = [
+    ":proto3",
+    "@googletest//:gtest_main",
+  ],
+)
+
+cc_test(
+  name = "test_field_numbers",
+  srcs = ["test/test_field_numbers.cc"],
+  deps = [
+    ":proto3",
+    "@googletest//:gtest_main",
+  ],
+)
+
+cc_test(
+  name = "test_fuzz",
+  srcs = ["test/test_fuzz.cc"],
+  deps = [
+    ":proto3",
+    "@googletest//:gtest_main",
+  ],
+)
+
+cc_test(
+  name = "test_well_known",
+  srcs = ["test/test_well_known.cc"],
+  deps = [
+    ":proto3",
+    "@googletest//:gtest_main",
+  ],
+)
+
+cc_test(
+  name = "test_unknown_fields",
+  srcs = ["test/test_unknown_fields.cc"],
+  deps = [
+    ":proto3",
+    "@googletest//:gtest_main",
+  ],
+)

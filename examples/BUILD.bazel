@@ -1,0 +1,31 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+
+cc_binary(
+  name = "basic",
+  srcs = ["basic.cc"],
+  deps = ["//:proto3"],
+)
+
+cc_binary(
+  name = "composite",
+  srcs = ["composite.cc"],
+  deps = ["//:proto3"],
+)
+
+cc_binary(
+  name = "oneof",
+  srcs = ["oneof.cc"],
+  deps = ["//:proto3"],
+)
+
+cc_binary(
+  name = "annotations",
+  srcs = ["annotations.cc"],
+  deps = ["//:proto3"],
+)
+
+cc_binary(
+  name = "well_known",
+  srcs = ["well_known.cc"],
+  deps = ["//:proto3"],
+)
