@@ -231,25 +231,23 @@ consteval auto fields_of_type(meta::info t) {
         meta::nonstatic_data_members_of(t, meta::access_context::unchecked()));
 }
 
-consteval std::optional<meta::info> get_annotation(meta::info entity,
-                                                   meta::info ann_type) {
+consteval bool has_annotation(meta::info entity, meta::info ann_type) {
     auto anns = meta::annotations_of_with_type(entity, ann_type);
-    if (anns.empty()) return {};
-    return anns.front();
+    return !anns.empty();
 }
 
 template <std::size_t I, class T>
 consteval bool field_skipped_at() {
     constexpr static auto fields = fields_of_type(^^T);
-    return get_annotation(fields[I], ^^skip_t).has_value();
+    return has_annotation(fields[I], ^^skip_t);
 }
 
 template <std::size_t I, class T>
 consteval int field_number_at() {
-    constexpr static auto fields = fields_of_type(^^T);
-    constexpr auto a = get_annotation(fields[I], ^^field_number_t);
-    if constexpr (a) {
-        return meta::extract<field_number_t>(*a).number;
+    auto fields = fields_of_type(^^T);
+    auto anns = meta::annotations_of_with_type(fields[I], ^^field_number_t);
+    if (!anns.empty()) {
+        return meta::extract<field_number_t>(anns.front()).number;
     } else {
         return static_cast<int>(I) + 1;
     }
@@ -258,37 +256,37 @@ consteval int field_number_at() {
 template <std::size_t I, class T>
 consteval bool field_zigzag_at() {
     constexpr static auto fields = fields_of_type(^^T);
-    return get_annotation(fields[I], ^^zigzag_t).has_value();
+    return has_annotation(fields[I], ^^zigzag_t);
 }
 
 template <std::size_t I, class T>
 consteval bool field_fixed_at() {
     constexpr static auto fields = fields_of_type(^^T);
-    return get_annotation(fields[I], ^^fixed_t).has_value();
+    return has_annotation(fields[I], ^^fixed_t);
 }
 
 template <std::size_t I, class T>
 consteval bool field_bytes_at() {
     constexpr static auto fields = fields_of_type(^^T);
-    return get_annotation(fields[I], ^^bytes_t).has_value();
+    return has_annotation(fields[I], ^^bytes_t);
 }
 
 template <std::size_t I, class T>
 consteval bool field_as_timestamp_at() {
     constexpr static auto fields = fields_of_type(^^T);
-    return get_annotation(fields[I], ^^as_timestamp_t).has_value();
+    return has_annotation(fields[I], ^^as_timestamp_t);
 }
 
 template <std::size_t I, class T>
 consteval bool field_as_duration_at() {
     constexpr static auto fields = fields_of_type(^^T);
-    return get_annotation(fields[I], ^^as_duration_t).has_value();
+    return has_annotation(fields[I], ^^as_duration_t);
 }
 
 template <std::size_t I, class T>
 consteval bool field_unknown_fields_at() {
     constexpr static auto fields = fields_of_type(^^T);
-    return get_annotation(fields[I], ^^unknown_fields_t).has_value();
+    return has_annotation(fields[I], ^^unknown_fields_t);
 }
 
 // How many [[= proto3::unknown_fields]] members the struct has. Used by
