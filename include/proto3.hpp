@@ -185,13 +185,22 @@ struct is_map<std::unordered_map<K, V, H, E, A>> : std::true_type {
 };
 template <class T> inline constexpr bool is_map_v = is_map<T>::value;
 
-template <class T> struct is_variant : std::false_type {};
-template <class... Ts> struct is_variant<std::variant<Ts...>> : std::true_type {};
-template <class T> inline constexpr bool is_variant_v = is_variant<T>::value;
+consteval bool is_instantiation_of(meta::info type, meta::info templ) {
+    return has_template_arguments(type) &&
+           template_of(type) == templ;
+}
 
-template <class T> struct is_optional : std::false_type {};
-template <class T> struct is_optional<std::optional<T>> : std::true_type {};
-template <class T> inline constexpr bool is_optional_v = is_optional<T>::value;
+consteval bool is_variant(meta::info type) {
+    return is_instantiation_of(type, ^^std::variant);
+}
+
+template <class T> inline constexpr bool is_variant_v = is_variant(^^T);
+
+consteval bool is_optional(meta::info type) {
+    return is_instantiation_of(type, ^^std::optional);
+}
+
+template <class T> inline constexpr bool is_optional_v = is_optional(^^T);
 
 template <class T>
 inline constexpr bool is_message_v =
@@ -220,10 +229,6 @@ struct oneof_t {
 template <int... Ns>
 constexpr inline oneof_t<Ns...> oneof{};
 
-template <class T> struct is_oneof_spec : std::false_type {};
-template <int... Ns> struct is_oneof_spec<oneof_t<Ns...>> : std::true_type {};
-template <class T> inline constexpr bool is_oneof_spec_v = is_oneof_spec<T>::value;
-
 // ===== Reflection helpers =====
 
 consteval auto fields_of_type(meta::info t) {
@@ -236,16 +241,12 @@ consteval bool has_annotation(meta::info entity, meta::info ann_type) {
     return !anns.empty();
 }
 
-template <std::size_t I, class T>
-consteval bool field_skipped_at() {
-    constexpr static auto fields = fields_of_type(^^T);
-    return has_annotation(fields[I], ^^skip_t);
+consteval bool field_skipped_at(meta::info field) {
+    return has_annotation(field, ^^skip_t);
 }
 
-template <std::size_t I, class T>
-consteval int field_number_at() {
-    auto fields = fields_of_type(^^T);
-    auto anns = meta::annotations_of_with_type(fields[I], ^^field_number_t);
+consteval int field_number_at(meta::info field, std::size_t I) {
+    auto anns = meta::annotations_of_with_type(field, ^^field_number_t);
     if (!anns.empty()) {
         return meta::extract<field_number_t>(anns.front()).number;
     } else {
@@ -253,40 +254,28 @@ consteval int field_number_at() {
     }
 }
 
-template <std::size_t I, class T>
-consteval bool field_zigzag_at() {
-    constexpr static auto fields = fields_of_type(^^T);
-    return has_annotation(fields[I], ^^zigzag_t);
+consteval bool field_zigzag_at(meta::info field) {
+    return has_annotation(field, ^^zigzag_t);
 }
 
-template <std::size_t I, class T>
-consteval bool field_fixed_at() {
-    constexpr static auto fields = fields_of_type(^^T);
-    return has_annotation(fields[I], ^^fixed_t);
+consteval bool field_fixed_at(meta::info field) {
+    return has_annotation(field, ^^fixed_t);
 }
 
-template <std::size_t I, class T>
-consteval bool field_bytes_at() {
-    constexpr static auto fields = fields_of_type(^^T);
-    return has_annotation(fields[I], ^^bytes_t);
+consteval bool field_bytes_at(meta::info field) {
+    return has_annotation(field, ^^bytes_t);
 }
 
-template <std::size_t I, class T>
-consteval bool field_as_timestamp_at() {
-    constexpr static auto fields = fields_of_type(^^T);
-    return has_annotation(fields[I], ^^as_timestamp_t);
+consteval bool field_as_timestamp_at(meta::info field) {
+    return has_annotation(field, ^^as_timestamp_t);
 }
 
-template <std::size_t I, class T>
-consteval bool field_as_duration_at() {
-    constexpr static auto fields = fields_of_type(^^T);
-    return has_annotation(fields[I], ^^as_duration_t);
+consteval bool field_as_duration_at(meta::info field) {
+    return has_annotation(field, ^^as_duration_t);
 }
 
-template <std::size_t I, class T>
-consteval bool field_unknown_fields_at() {
-    constexpr static auto fields = fields_of_type(^^T);
-    return has_annotation(fields[I], ^^unknown_fields_t);
+consteval bool field_unknown_fields_at(meta::info field) {
+    return has_annotation(field, ^^unknown_fields_t);
 }
 
 // How many [[= proto3::unknown_fields]] members the struct has. Used by
@@ -294,11 +283,12 @@ consteval bool field_unknown_fields_at() {
 template <class T>
 consteval std::size_t unknown_fields_count() {
     constexpr static auto fields = fields_of_type(^^T);
-    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        return ((field_unknown_fields_at<Is, T>() ? std::size_t{1}
-                                                  : std::size_t{0})
-                + ... + std::size_t{0});
-    }(std::make_index_sequence<fields.size()>{});
+    size_t count = 0;
+    for (auto field : fields) {
+        if (field_unknown_fields_at(field))
+            ++count;
+    }
+    return count;
 }
 
 // Index of the (single) unknown-fields member, or nullopt if the struct
@@ -306,15 +296,11 @@ consteval std::size_t unknown_fields_count() {
 template <class T>
 consteval std::optional<std::size_t> unknown_fields_index() {
     constexpr static auto fields = fields_of_type(^^T);
-    std::optional<std::size_t> result;
-    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        ([&] {
-            if constexpr (field_unknown_fields_at<Is, T>()) {
-                if (!result.has_value()) result = Is;
-            }
-        }(), ...);
-    }(std::make_index_sequence<fields.size()>{});
-    return result;
+    for (std::size_t i = 0; i != fields.size(); ++i) {
+        if (field_unknown_fields_at(fields[i]))
+            return i;
+    }
+    return std::nullopt;
 }
 
 // True iff the unknown-fields member (if any) has type std::string.
@@ -327,8 +313,8 @@ consteval bool unknown_fields_member_is_string() {
         return true;
     } else {
         constexpr static auto fields = fields_of_type(^^T);
-        using FT = [: meta::type_of(fields[*idx]) :];
-        return std::is_same_v<std::remove_cv_t<FT>, std::string>;
+        auto ft = meta::type_of(fields[*idx]);
+        return is_same_type(remove_cv(ft), ^^std::string);
     }
 }
 
@@ -343,35 +329,23 @@ template <class U>
 inline constexpr bool is_string_or_vector_string_v =
     is_string_or_vector_string<U>::value;
 
-// Find any oneof_t<...> annotation on field I of T. The annotation type is a
-// distinct specialization for each pack of field numbers, so we can't filter
-// by an exact ^^type — instead iterate all annotations with `template for` so
-// each is constexpr, splice its type, and probe with is_oneof_spec_v.
-template <std::size_t I, class T>
-consteval std::optional<meta::info> find_oneof_ann_at() {
-    constexpr static auto fields = fields_of_type(^^T);
-    constexpr auto m = fields[I];
-    constexpr static auto anns =
-        std::define_static_array(meta::annotations_of(m));
-    std::optional<meta::info> result;
-    template for (constexpr auto ann : anns) {
-        using AnnRaw = [: meta::type_of(ann) :];
-        using AnnT = std::remove_cv_t<AnnRaw>;
-        if constexpr (is_oneof_spec_v<AnnT>) {
-            result = ann;
-        }
+// Find any oneof_t<...> annotation on field 'm'.
+consteval std::optional<meta::info> find_oneof_ann_at(meta::info m) {
+    auto anns = meta::annotations_of(m);
+    for (auto ann : anns) {
+        if (is_instantiation_of(remove_cv(type_of(ann)), ^^oneof_t))
+            return ann;
     }
-    return result;
+    return std::nullopt;
 }
 
-template <std::size_t I, class T>
-consteval bool is_oneof_at() {
-    return find_oneof_ann_at<I, T>().has_value();
+consteval bool is_oneof_at(meta::info m) {
+    return find_oneof_ann_at(m).has_value();
 }
 
-template <std::size_t I, class T>
+template <meta::info m>
 consteval auto oneof_field_numbers_at() {
-    constexpr auto opt_ann = find_oneof_ann_at<I, T>();
+    constexpr auto opt_ann = find_oneof_ann_at(m);
     static_assert(opt_ann.has_value(),
                   "expected a [[= proto3::oneof<...>]] annotation");
     using AnnRaw = [: meta::type_of(*opt_ann) :];
@@ -398,19 +372,18 @@ inline constexpr int kMaxFieldNumber = 536870911;          // 2^29 - 1
 inline constexpr int kReservedFirst  = 19000;
 inline constexpr int kReservedLast   = 19999;
 
-// How many wire field numbers field I of T contributes (0 for skipped or
+// How many wire field numbers field contributes (0 for skipped or
 // for an [[= proto3::unknown_fields]] sink, the oneof alternative count
 // for oneof variants, 1 otherwise).
-template <std::size_t I, class T>
+template <meta::info field>
 consteval std::size_t numbers_at_field() {
-    if constexpr (field_skipped_at<I, T>() || field_unknown_fields_at<I, T>()) {
+    if constexpr (field_skipped_at(field) || field_unknown_fields_at(field)) {
         return 0;
     } else {
-        constexpr static auto fields = fields_of_type(^^T);
-        using FT = [: meta::type_of(fields[I]) :];
-        if constexpr (is_variant_v<FT>) {
-            if constexpr (is_oneof_at<I, T>()) {
-                return oneof_field_numbers_at<I, T>().size();
+        constexpr static auto ft = meta::type_of(field);
+        if constexpr (is_variant(ft)) {
+            if constexpr (is_oneof_at(field)) {
+                return oneof_field_numbers_at<field>().size();
             } else {
                 return 0;  // rejected at encode_one with a clearer message
             }
@@ -423,26 +396,27 @@ consteval std::size_t numbers_at_field() {
 template <class T>
 consteval std::size_t count_active_field_numbers() {
     constexpr static auto fields = fields_of_type(^^T);
-    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        return (numbers_at_field<Is, T>() + ... + std::size_t{0});
-    }(std::make_index_sequence<fields.size()>{});
+    std::size_t count = 0;
+    template for (constexpr auto field : fields)
+        count += numbers_at_field<field>();
+    return count;
 }
 
-// Append field I of T's contribution to nums, advancing pos. Skipped and
+// Append field s contribution to nums, advancing pos. Skipped and
 // unknown-fields-sink members contribute nothing.
-template <std::size_t I, class T, std::size_t N>
-consteval void emit_field_numbers_at(std::array<int, N>& nums,
+template <meta::info field, std::size_t N>
+consteval void emit_field_numbers_at(std::size_t field_index,
+                                     std::array<int, N>& nums,
                                      std::size_t& pos) {
-    constexpr static auto fields = fields_of_type(^^T);
-    if constexpr (!field_skipped_at<I, T>() && !field_unknown_fields_at<I, T>()) {
-        using FT = [: meta::type_of(fields[I]) :];
-        if constexpr (is_variant_v<FT>) {
-            if constexpr (is_oneof_at<I, T>()) {
-                constexpr auto fns = oneof_field_numbers_at<I, T>();
+    if constexpr (!field_skipped_at(field) && !field_unknown_fields_at(field)) {
+        constexpr static auto ft = meta::type_of(field);
+        if constexpr (is_variant(ft)) {
+            if constexpr (is_oneof_at(field)) {
+                constexpr auto fns = oneof_field_numbers_at<field>();
                 for (int n : fns) nums[pos++] = n;
             }
         } else {
-            nums[pos++] = field_number_at<I, T>();
+            nums[pos++] = field_number_at(field, field_index);
         }
     }
 }
@@ -453,9 +427,9 @@ consteval auto collect_field_numbers() {
     constexpr static auto fields = fields_of_type(^^T);
     std::array<int, N> nums{};
     std::size_t pos = 0;
-    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        (emit_field_numbers_at<Is, T>(nums, pos), ...);
-    }(std::make_index_sequence<fields.size()>{});
+    std::size_t field_index = 0;
+    template for (constexpr auto field : fields)
+        emit_field_numbers_at<field>(field_index++, nums, pos);
     return nums;
 }
 
@@ -1095,32 +1069,32 @@ void encode_one(std::string& out, const T& msg) {
     // appends its bytes after the known-field fold; encoding it here would
     // double-emit it as a plain bytes field with whatever default field
     // number declaration order assigned.
-    if constexpr (!field_skipped_at<I, T>() && !field_unknown_fields_at<I, T>()) {
+    if constexpr (!field_skipped_at(m) && !field_unknown_fields_at(m)) {
         using FieldType = std::remove_cvref_t<decltype(msg.[:m:])>;
         if constexpr (is_variant_v<FieldType>) {
-            static_assert(is_oneof_at<I, T>(),
+            static_assert(is_oneof_at(m),
                 "std::variant field requires a [[= proto3::oneof<...>]] annotation");
-            encode_oneof_variant<oneof_field_numbers_at<I, T>()>(out, msg.[:m:]);
+            encode_oneof_variant<oneof_field_numbers_at<m>()>(out, msg.[:m:]);
         } else {
-            static_assert(!(field_zigzag_at<I, T>() && field_fixed_at<I, T>()),
+            static_assert(!(field_zigzag_at(m) && field_fixed_at(m)),
                 "[[= proto3::zigzag]] and [[= proto3::fixed]] are mutually "
                 "exclusive on the same field");
-            static_assert(!field_bytes_at<I, T>() ||
+            static_assert(!field_bytes_at(m) ||
                           is_string_or_vector_string_v<FieldType>,
                 "[[= proto3::bytes]] is only valid on std::string or "
                 "std::vector<std::string> fields");
-            static_assert(!(field_as_timestamp_at<I, T>() &&
-                            field_as_duration_at<I, T>()),
+            static_assert(!(field_as_timestamp_at(m) &&
+                            field_as_duration_at(m)),
                 "[[= proto3::as_timestamp]] and [[= proto3::as_duration]] "
                 "are mutually exclusive on the same field");
-            constexpr int fn = field_number_at<I, T>();
-            if constexpr (field_as_timestamp_at<I, T>()) {
+            constexpr int fn = field_number_at(m, I);
+            if constexpr (field_as_timestamp_at(m)) {
                 encode_field_as<Timestamp>(out, fn, msg.[:m:]);
-            } else if constexpr (field_as_duration_at<I, T>()) {
+            } else if constexpr (field_as_duration_at(m)) {
                 encode_field_as<Duration>(out, fn, msg.[:m:]);
-            } else if constexpr (field_zigzag_at<I, T>()) {
+            } else if constexpr (field_zigzag_at(m)) {
                 encode_field_zz(out, fn, msg.[:m:]);
-            } else if constexpr (field_fixed_at<I, T>()) {
+            } else if constexpr (field_fixed_at(m)) {
                 encode_field_fx(out, fn, msg.[:m:]);
             } else {
                 encode_field(out, fn, msg.[:m:]);
@@ -1135,25 +1109,25 @@ bool try_decode_one(std::string_view& in, T& msg, int fn, wire_type wt) {
     constexpr auto m = fields[I];
     // Unknown-fields sink is matched by no wire field number — fall through
     // so deserialize_from's "unhandled" path captures the bytes for it.
-    if constexpr (field_skipped_at<I, T>() || field_unknown_fields_at<I, T>()) {
+    if constexpr (field_skipped_at(m) || field_unknown_fields_at(m)) {
         return false;
     } else {
         using FieldType = std::remove_cvref_t<decltype(msg.[:m:])>;
         if constexpr (is_variant_v<FieldType>) {
-            static_assert(is_oneof_at<I, T>(),
+            static_assert(is_oneof_at(m),
                 "std::variant field requires a [[= proto3::oneof<...>]] annotation");
-            return try_decode_oneof_variant<oneof_field_numbers_at<I, T>()>(
+            return try_decode_oneof_variant<oneof_field_numbers_at<m>()>(
                 in, msg.[:m:], fn, wt);
         } else {
-            constexpr int my_fn = field_number_at<I, T>();
+            constexpr int my_fn = field_number_at(m, I);
             if (fn == my_fn) {
-                if constexpr (field_as_timestamp_at<I, T>()) {
+                if constexpr (field_as_timestamp_at(m)) {
                     decode_field_as<Timestamp>(in, msg.[:m:], wt);
-                } else if constexpr (field_as_duration_at<I, T>()) {
+                } else if constexpr (field_as_duration_at(m)) {
                     decode_field_as<Duration>(in, msg.[:m:], wt);
-                } else if constexpr (field_zigzag_at<I, T>()) {
+                } else if constexpr (field_zigzag_at(m)) {
                     decode_field_zz(in, msg.[:m:], wt);
-                } else if constexpr (field_fixed_at<I, T>()) {
+                } else if constexpr (field_fixed_at(m)) {
                     decode_field_fx(in, msg.[:m:], wt);
                 } else {
                     decode_field(in, msg.[:m:], wt);
