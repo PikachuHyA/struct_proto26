@@ -318,16 +318,19 @@ consteval bool unknown_fields_member_is_string() {
     }
 }
 
-// True iff U is `std::string` or `std::vector<std::string>` — the only
+// True iff type is `std::string` or `std::vector<std::string>` — the only
 // types that may legally carry the [[= proto3::bytes]] documentation marker.
-template <class U> struct is_string_or_vector_string : std::false_type {};
-template <> struct is_string_or_vector_string<std::string> : std::true_type {};
-template <class A>
-struct is_string_or_vector_string<std::vector<std::string, A>>
-    : std::true_type {};
-template <class U>
-inline constexpr bool is_string_or_vector_string_v =
-    is_string_or_vector_string<U>::value;
+consteval bool is_string_or_vector_string(meta::info type) {
+    if (is_same_type(type, ^^std::string)) {
+        return true;
+    }
+    if (has_template_arguments(type) && template_of(type) == ^^std::vector) {
+        auto template_arguments = template_arguments_of(type);
+        return template_arguments.size() == 2 &&
+               is_same_type(template_arguments[0], ^^std::string);
+    }
+    return false;
+}
 
 // Find any oneof_t<...> annotation on field 'm'.
 consteval std::optional<meta::info> find_oneof_ann_at(meta::info m) {
@@ -1070,8 +1073,8 @@ void encode_one(std::string& out, const T& msg) {
     // double-emit it as a plain bytes field with whatever default field
     // number declaration order assigned.
     if constexpr (!field_skipped_at(m) && !field_unknown_fields_at(m)) {
-        using FieldType = std::remove_cvref_t<decltype(msg.[:m:])>;
-        if constexpr (is_variant_v<FieldType>) {
+        constexpr auto field_type = remove_cvref(type_of(m));
+        if constexpr (is_variant(field_type)) {
             static_assert(is_oneof_at(m),
                 "std::variant field requires a [[= proto3::oneof<...>]] annotation");
             encode_oneof_variant<oneof_field_numbers_at<m>()>(out, msg.[:m:]);
@@ -1080,7 +1083,7 @@ void encode_one(std::string& out, const T& msg) {
                 "[[= proto3::zigzag]] and [[= proto3::fixed]] are mutually "
                 "exclusive on the same field");
             static_assert(!field_bytes_at(m) ||
-                          is_string_or_vector_string_v<FieldType>,
+                          is_string_or_vector_string(field_type),
                 "[[= proto3::bytes]] is only valid on std::string or "
                 "std::vector<std::string> fields");
             static_assert(!(field_as_timestamp_at(m) &&
@@ -1112,8 +1115,8 @@ bool try_decode_one(std::string_view& in, T& msg, int fn, wire_type wt) {
     if constexpr (field_skipped_at(m) || field_unknown_fields_at(m)) {
         return false;
     } else {
-        using FieldType = std::remove_cvref_t<decltype(msg.[:m:])>;
-        if constexpr (is_variant_v<FieldType>) {
+        constexpr auto field_type = remove_cvref(type_of(m));
+        if constexpr (is_variant(field_type)) {
             static_assert(is_oneof_at(m),
                 "std::variant field requires a [[= proto3::oneof<...>]] annotation");
             return try_decode_oneof_variant<oneof_field_numbers_at<m>()>(
